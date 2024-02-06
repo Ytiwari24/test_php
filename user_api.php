@@ -14,80 +14,63 @@ if ($connection->connect_error) {
     die("Connection failed: " . $connection->connect_error);
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    // Fetch data from the users table
+// Function to fetch all users
+function getAllUsers()
+{
+    global $connection;
+
     $query = "SELECT * FROM user WHERE status = '1'";
     $result = $connection->query($query);
 
-    // Check if there are results
     if ($result->num_rows > 0) {
-        // Fetch data and store in an array
         $users = [];
         while ($row = $result->fetch_assoc()) {
             $users[] = $row;
         }
-
-        // Set the Content-Type header to JSON
-        header('Content-Type: application/json');
-
-        // Output the user data as JSON
-        echo json_encode($users);
+        return $users;
     } else {
-        echo "No users found.";
+        return "No users found.";
     }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Assuming you receive JSON data in the request body
-    $jsonInput = file_get_contents('php://input');
-    $requestData = json_decode($jsonInput, true);
+}
 
-    // Validate and sanitize the input data (add more validation as needed)
+// Function to add a new user
+function addUser($requestData)
+{
+    global $connection;
+
     $firstName = isset($requestData['first_name']) ? htmlspecialchars($requestData['first_name']) : null;
     $lastName = isset($requestData['last_name']) ? htmlspecialchars($requestData['last_name']) : null;
     $email = isset($requestData['email']) ? filter_var($requestData['email'], FILTER_VALIDATE_EMAIL) : null;
-    $password = isset($requestData['password']) ? $requestData['password'] : null; // Assuming password is included in the JSON payload
-    // ... Add more fields as needed
+    $password = isset($requestData['password']) ? $requestData['password'] : null;
 
-    // Validate required fields
     if (!$firstName || !$lastName || !$email || !$password) {
         http_response_code(400); // Bad Request
-        echo json_encode(['error' => 'Invalid or missing input data']);
-        exit();
+        return ['error' => 'Invalid or missing input data'];
     }
 
-    // Hash the password using Bcrypt
     $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
 
-    // Insert new user into the users table
     $query = "INSERT INTO user (first_name, last_name, email, password) VALUES ('$firstName', '$lastName', '$email', '$hashedPassword')";
     $result = $connection->query($query);
 
     if ($result) {
         http_response_code(201); // Created
-        echo json_encode(['message' => 'User created successfully']);
+        return ['message' => 'User created successfully'];
     } else {
         http_response_code(500); // Internal Server Error
-        echo json_encode(['error' => 'Failed to create user']);
+        return ['error' => 'Failed to create user'];
     }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
-    // Assuming you receive JSON data in the request body
-    $jsonInput = file_get_contents('php://input');
-    $requestData = json_decode($jsonInput, true);
+}
 
-    // Validate and sanitize the input data (add more validation as needed)
-    $userId = isset($requestData['id']) ? intval($requestData['id']) : null;
+// Function to update user information
+function updateUser($userId, $requestData)
+{
+    global $connection;
+
     $newFirstName = isset($requestData['first_name']) ? htmlspecialchars($requestData['first_name']) : null;
     $newLastName = isset($requestData['last_name']) ? htmlspecialchars($requestData['last_name']) : null;
     $newEmail = isset($requestData['email']) ? filter_var($requestData['email'], FILTER_VALIDATE_EMAIL) : null;
-    // ... Add more fields as needed
 
-    // Validate required fields
-    // if (!$userId || (!$newFirstName && !$newLastName && !$newEmail)) {
-    //     http_response_code(400); // Bad Request
-    //     echo json_encode(['error' => 'Invalid or missing input data']);
-    //     exit();
-    // }
-
-    // Update user information in the users table
     $updateQuery = "UPDATE user SET 
                     first_name = IFNULL('$newFirstName', first_name),
                     last_name = IFNULL('$newLastName', last_name),
@@ -98,37 +81,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     if ($updateResult) {
         http_response_code(200); // OK
-        echo json_encode(['message' => 'User updated successfully']);
+        return ['message' => 'User updated successfully'];
     } else {
         http_response_code(500); // Internal Server Error
-        echo json_encode(['error' => 'Failed to update user']);
+        return ['error' => 'Failed to update user'];
     }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
-    // Assuming you receive JSON data in the request body
-    $jsonInput = file_get_contents('php://input');
-    $requestData = json_decode($jsonInput, true);
+}
 
-    // Validate and sanitize the input data (add more validation as needed)
-    $userIdToDelete = isset($requestData['id']) ? intval($requestData['id']) : null;
+// Function to delete a user
+function deleteUser($userId)
+{
+    global $connection;
 
-    // Validate required fields
-    if (!$userIdToDelete) {
-        http_response_code(400); // Bad Request
-        echo json_encode(['error' => 'Invalid or missing user ID']);
-        exit();
-    }
-
-    // Delete user from the users table
-    $deleteQuery = "UPDATE user SET status = '0' WHERE id = $userIdToDelete";
+    $deleteQuery = "UPDATE user SET status = '0' WHERE id = $userId";
     $deleteResult = $connection->query($deleteQuery);
 
     if ($deleteResult) {
         http_response_code(200); // OK
-        echo json_encode(['message' => 'User deleted successfully']);
+        return ['message' => 'User deleted successfully'];
     } else {
         http_response_code(500); // Internal Server Error
-        echo json_encode(['error' => 'Failed to delete user']);
+        return ['error' => 'Failed to delete user'];
     }
+}
+// Function to handle login
+function loginUser($requestData)
+{
+    global $connection;
+
+    $email = isset($requestData['email']) ? filter_var($requestData['email'], FILTER_VALIDATE_EMAIL) : null;
+    $password = isset($requestData['password']) ? $requestData['password'] : null;
+
+    if (!$email || !$password) {
+        http_response_code(400); // Bad Request
+        return ['status' => 'error', 'message' => 'Invalid or missing input data'];
+    }
+
+    $query = "SELECT * FROM user WHERE email = '$email' AND status = '1'";
+    $result = $connection->query($query);
+
+    if ($result->num_rows > 0) {
+        $user = $result->fetch_assoc();
+
+        if (password_verify($password, $user['password'])) {
+            // Password is correct
+            $response = [
+                'status' => 'success',
+                'message' => 'Login successful',
+                'user_id' => $user['id'], // Include other user data as needed
+            ];
+            http_response_code(200); // OK
+        } else {
+            // Password is incorrect
+            $response = ['status' => 'error', 'message' => 'Incorrect password'];
+            http_response_code(401); // Unauthorized
+        }
+    } else {
+        // User with the provided email not found
+        $response = ['status' => 'error', 'message' => 'User not found'];
+        http_response_code(404); // Not Found
+    }
+
+    return $response;
+}
+
+
+// Handle the request based on the HTTP method
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $response = getAllUsers();
+    echo json_encode($response);
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $jsonInput = file_get_contents('php://input');
+    $requestData = json_decode($jsonInput, true);
+    $response = addUser($requestData);
+    echo json_encode($response);
+} elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    $jsonInput = file_get_contents('php://input');
+    $requestData = json_decode($jsonInput, true);
+    $userId = isset($requestData['id']) ? intval($requestData['id']) : null;
+    $response = updateUser($userId, $requestData);
+    echo json_encode($response);
+} elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+    $jsonInput = file_get_contents('php://input');
+    $requestData = json_decode($jsonInput, true);
+    $userIdToDelete = isset($requestData['id']) ? intval($requestData['id']) : null;
+    $response = deleteUser($userIdToDelete);
+    echo json_encode($response);
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action']) && $_GET['action'] === 'login') {
+    $jsonInput = file_get_contents('php://input');
+    $requestData = json_decode($jsonInput, true);
+    $response = loginUser($requestData);
+    echo json_encode($response);
 } else {
     http_response_code(405); // Method Not Allowed
     echo json_encode(['error' => 'Invalid request method']);
